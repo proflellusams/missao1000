@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Painel do Professor — Missão 1000</title>
+<style>
+*{box-sizing:border-box}
+body{margin:0;font-family:"Trebuchet MS","Segoe UI",system-ui,sans-serif;background:#f4f1e8;color:#1b1b2f}
+header{background:#2b2d7c;color:#fff;padding:14px 20px;display:flex;flex-wrap:wrap;gap:12px;align-items:center;justify-content:space-between}
+header h1{margin:0;font-size:22px}
+.ctrl{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+select,input,button{font-family:inherit;font-size:15px;padding:8px 10px;border-radius:10px;border:2px solid #c9a227}
+button{background:#c9a227;color:#1b1b2f;font-weight:bold;cursor:pointer;border:none}
+main{padding:16px 20px;max-width:1300px;margin:auto}
+.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px;margin-bottom:16px}
+.k{background:#fff;border-radius:14px;padding:12px 14px;box-shadow:0 3px 0 rgba(0,0,0,.08)}
+.k small{color:#666;font-weight:bold;text-transform:uppercase;font-size:11px;letter-spacing:.5px}
+.k b{display:block;font-size:28px;color:#2b2d7c}
+.k .bar{height:8px;background:#e6e2d6;border-radius:6px;margin-top:6px;overflow:hidden}
+.k .bar i{display:block;height:100%;background:var(--c)}
+section{background:#fff;border-radius:14px;padding:14px;margin-bottom:16px;box-shadow:0 3px 0 rgba(0,0,0,.08);overflow-x:auto}
+h2{margin:0 0 10px;font-size:18px;color:#2b2d7c}
+table{width:100%;border-collapse:collapse;font-size:14px}
+th{text-align:left;background:#f4f1e8;padding:8px;position:sticky;top:0;cursor:pointer;white-space:nowrap}
+td{padding:7px 8px;border-bottom:1px solid #eee;white-space:nowrap}
+td.n{text-align:center;font-weight:bold}
+.pill{display:inline-block;padding:2px 8px;border-radius:20px;font-size:12px;font-weight:bold;color:#fff}
+.on{background:#27ae60}.aula{background:#8e44ad}.idle{background:#95a5a6}.fail{background:#e74c3c}.done{background:#2f80ed}
+.n0{background:#ffd9d9}.n1{background:#ffecc7}.n2{background:#fff7c2}.n3{background:#d9f5dd}.n4{background:#b7ebc0}
+.dot{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:6px}
+#msg{padding:12px;border-radius:10px;background:#fff3cd;margin-bottom:12px}
+.muted{color:#777;font-size:13px}
+.q{white-space:normal;max-width:620px}
+.errbar{display:inline-block;height:10px;background:#e74c3c;border-radius:4px;vertical-align:middle;margin-right:6px}
+</style>
+</head>
+<body>
+<header>
+  <h1>📊 Painel do Professor — Missão 1000</h1>
+  <div class="ctrl">
+    <label>Turma: <select id="turma"><option value="">Todas</option></select></label>
+    <span class="muted" style="color:#ddd" id="upd">—</span>
+    <button id="cfg">⚙ Endereço</button>
+  </div>
+</header>
+<main>
+  <div id="msg" hidden></div>
+  <div class="cards" id="cards"></div>
+  <section>
+    <h2>👩‍🎓 Alunos (atualiza a cada 10 segundos)</h2>
+    <table><thead><tr>
+      <th data-s="nome">Aluno</th><th data-s="turma">Turma</th><th data-s="status">Agora</th><th data-s="mundo">Fase</th>
+      <th data-s="c0">C1</th><th data-s="c1">C2</th><th data-s="c2">C3</th><th data-s="c3">C4</th><th data-s="c4">C5</th>
+      <th data-s="total">Total</th><th data-s="pct">% acertos</th><th data-s="ultimo">Última ação</th>
+    </tr></thead><tbody id="tb"></tbody></table>
+  </section>
+  <section>
+    <h2>⚠ Questões que a turma mais erra (bom para revisar na aula)</h2>
+    <table><thead><tr><th>Mundo</th><th>Questão</th><th>Erros</th><th>Acertos</th></tr></thead><tbody id="tq"></tbody></table>
+  </section>
+  <p class="muted">Notas por competência mostram a melhor nota de cada aluno (0 a 200). “% acertos” soma todas as respostas dadas até agora.</p>
+</main>
+<script src="config.js"></script>
+<script>
+(() => {
+const $ = s => document.querySelector(s);
+const esc = s => String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const KEY = 'missao1000_prof_url';
+const qs = new URLSearchParams(location.search);
+const DEMO = qs.has('demo');
+let URL_ = '';
+try { URL_ = localStorage.getItem(KEY) || ''; } catch (e) {}
+if (!URL_ && window.CONFIG) URL_ = CONFIG.PLANILHA_URL || '';
+let data = null, sortKey = 'ultimo', sortDir = -1;
+const COLORS = ['#2f80ed', '#16a085', '#7e57c2', '#e67e22', '#27ae60'];
+
+function msg(t) { const m = $('#msg'); m.hidden = !t; m.innerHTML = t || ''; }
+$('#cfg').onclick = () => {
+  const u = prompt('Cole o endereço do App da Web (termina em /exec):', URL_);
+  if (u !== null) { URL_ = u.trim(); try { localStorage.setItem(KEY, URL_); } catch (e) {} load(); }
+};
+$('#turma').onchange = () => load();
+document.querySelectorAll('th[data-s]').forEach(th => th.onclick = () => {
+  const k = th.dataset.s; if (sortKey === k) sortDir *= -1; else { sortKey = k; sortDir = (k === 'nome' || k === 'turma') ? 1 : -1; } draw();
+});
+
+function demoData() {
+  const nomes = ['Ana', 'Bruno', 'Carla', 'Davi', 'Eduarda', 'Felipe', 'Gabriela', 'Heitor', 'Isadora', 'João'];
+  const now = Date.now();
+  return { agora: now, turmas: ['1º Mecatrônica B'], alunos: nomes.map((n, i) => {
+    const m = 1 + (i % 5); const notas = [0,1,2,3,4].map(c => c < m - 1 ? [120,160,200,80,160][(i + c) % 5] : null);
+    return { nome: n + ' Silva', turma: '1º Mecatrônica B', mundo: m, status: i % 4 === 3 ? 'perdeu no mundo ' + m : 'jogando', ultimo: now - i * 47000,
+      notas, acertos: [5,4,6,3,2].map(v => v + (i % 3)), erros: [1,2,1,3,2].map(v => v + (i % 2)), tentativas: 1 + i % 3 };
+  }), questoes: [
+    { questao: 'Complete: “O acesso ___ educação deve ser garantido ___ todos.”', mundo: 1, certas: 4, erradas: 7 },
+    { questao: 'Qual abordagem TANGENCIA o tema?', mundo: 2, certas: 3, erradas: 5 },
+    { questao: 'Qual é o MODO/MEIO da proposta?', mundo: 5, certas: 2, erradas: 4 }
+  ]};
+}
+
+async function load() {
+  if (DEMO) { data = demoData(); fillTurmas(); draw(); return; }
+  if (!URL_) { msg('⚙ Clique em <b>Endereço</b> e cole o link do App da Web do Apps Script (veja o LEIA-ME). Para ver um exemplo, abra esta página com <b>?demo</b> no final do endereço.'); return; }
+  try {
+    const t = $('#turma').value;
+    const r = await fetch(URL_ + (URL_.includes('?') ? '&' : '?') + 'turma=' + encodeURIComponent(t) + '&_=' + Date.now());
+    data = await r.json();
+    if (data.erro) { msg('❌ ' + esc(data.erro)); return; }
+    msg(''); fillTurmas(); draw();
+  } catch (e) { msg('❌ Não consegui ler a planilha. Confira o endereço e se o App da Web está com acesso “Qualquer pessoa”.'); }
+}
+function fillTurmas() {
+  const sel = $('#turma'), cur = sel.value;
+  sel.innerHTML = '<option value="">Todas</option>' + data.turmas.map(t => `<option ${t === cur ? 'selected' : ''}>${esc(t)}</option>`).join('');
+}
+function ago(ms) {
+  const s = Math.round((data.agora - ms) / 1000);
+  if (s < 60) return 'agora'; if (s < 3600) return Math.floor(s / 60) + ' min'; if (s < 86400) return Math.floor(s / 3600) + ' h'; return Math.floor(s / 86400) + ' d';
+}
+function draw() {
+  $('#upd').textContent = 'Atualizado ' + new Date().toLocaleTimeString('pt-BR');
+  const A = data.alunos.map(a => {
+    const ac = a.acertos.reduce((x, y) => x + y, 0), er = a.erros.reduce((x, y) => x + y, 0);
+    const o = Object.assign({}, a, { total: a.notas.reduce((x, y) => x + (y || 0), 0), pct: ac + er ? Math.round(ac / (ac + er) * 100) : 0, ativo: data.agora - a.ultimo < 120000 });
+    a.notas.forEach((n, i) => o['c' + i] = n === null ? -1 : n);
+    return o;
+  });
+  A.sort((x, y) => { const a = x[sortKey], b = y[sortKey]; return (typeof a === 'string' ? a.localeCompare(b) : a - b) * sortDir; });
+  // cartões
+  const ativos = A.filter(a => a.ativo).length;
+  const medias = [0,1,2,3,4].map(i => { const v = A.map(a => a.notas[i]).filter(n => n !== null); return v.length ? Math.round(v.reduce((x, y) => x + y, 0) / v.length) : null; });
+  const acc = [0,1,2,3,4].map(i => { const c = A.reduce((s, a) => s + a.acertos[i], 0), e = A.reduce((s, a) => s + a.erros[i], 0); return c + e ? Math.round(c / (c + e) * 100) : null; });
+  $('#cards').innerHTML = `<div class="k"><small>Alunos</small><b>${A.length}</b><span class="muted">${ativos} jogando agora</span></div>` +
+    medias.map((m, i) => `<div class="k"><small>C${i + 1} · média</small><b>${m === null ? '—' : m}</b><span class="muted">${acc[i] === null ? 'sem respostas' : acc[i] + '% de acertos'}</span><div class="bar"><i style="width:${(m || 0) / 2}%;--c:${COLORS[i]}"></i></div></div>`).join('');
+  // tabela
+  $('#tb').innerHTML = A.map(a => {
+    const st = a.status.startsWith('jogando') ? (a.ativo ? 'on' : 'idle') : a.status.startsWith('perdeu') ? 'fail' : a.status.startsWith('concluiu') ? 'done' : a.status.startsWith('na aula') ? 'aula' : 'idle';
+    const label = st === 'idle' && a.status === 'jogando' ? 'parado' : a.status;
+    return `<tr><td>${a.ativo ? '<span class="dot" style="background:#27ae60"></span>' : ''}<b>${esc(a.nome)}</b></td><td>${esc(a.turma)}</td>
+      <td><span class="pill ${st}">${esc(label)}</span></td><td class="n">${a.mundo || '—'}</td>
+      ${a.notas.map(n => `<td class="n ${n === null ? '' : 'n' + Math.min(4, Math.floor(n / 50))}">${n === null ? '—' : n}</td>`).join('')}
+      <td class="n">${a.total}</td><td class="n">${a.pct}%</td><td>${ago(a.ultimo)}</td></tr>`;
+  }).join('') || '<tr><td colspan="12" class="muted">Nenhum aluno ainda. Peça para a turma abrir o jogo e começar!</td></tr>';
+  // questões mais erradas
+  const Qs = data.questoes.filter(q => q.erradas > 0).sort((a, b) => b.erradas / (b.erradas + b.certas) - a.erradas / (a.erradas + a.certas) || b.erradas - a.erradas).slice(0, 10);
+  const maxE = Math.max(1, ...Qs.map(q => q.erradas));
+  $('#tq').innerHTML = Qs.map(q => `<tr><td class="n">C${q.mundo}</td><td class="q">${esc(q.questao)}</td><td><span class="errbar" style="width:${q.erradas / maxE * 80}px"></span>${q.erradas}</td><td>${q.certas}</td></tr>`).join('') || '<tr><td colspan="4" class="muted">Ainda sem erros registrados.</td></tr>';
+}
+load(); setInterval(load, 10000);
+})();
+</script>
+</body>
+</html>
